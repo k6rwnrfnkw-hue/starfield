@@ -3,6 +3,13 @@ import { Interaction }    from './interaction.js';
 
 const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
 
+// 极光带颜色
+const AURORA_BANDS = [
+  { hue: 160, sat: 80, lig: 60 },
+  { hue: 270, sat: 70, lig: 65 },
+  { hue: 130, sat: 85, lig: 55 },
+];
+
 function hexToRgb(hex) {
   const value = Number.parseInt(hex.replace('#', ''), 16);
 
@@ -38,18 +45,25 @@ export class Renderer {
     this.canvas.style.height = '100vh';
 
     this.resize();
-    this.particles  = new ParticleSystem(this.width, this.height);
-    this.nebulas    = this.createNebulas();
+    this.particles   = new ParticleSystem(this.width, this.height);
+    this.nebulas     = this.createNebulas();
     this.interaction = new Interaction();
+    this.auroras     = this._createAuroras();
+
+    // 超空间飞行状态
+    this.warp = { active: false, progress: 0, streaks: [] };
 
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
 
-    // 点击触发爆炸
+    // 单击：爆炸
     this.canvas.addEventListener('click', (e) => {
       const rect = this.canvas.getBoundingClientRect();
       this.interaction.explode(e.clientX - rect.left, e.clientY - rect.top);
     });
+
+    // 双击：超空间飞行
+    this.canvas.addEventListener('dblclick', () => this._startWarp());
 
     window.addEventListener('resize', () => this.resize(), { passive: true });
   }
@@ -66,6 +80,7 @@ export class Renderer {
       this.particles.resize(this.width, this.height);
 
     this.nebulas = this.createNebulas();
+    if (this.auroras) this.auroras = this._createAuroras();
   }
 
   createNebulas() {
@@ -205,6 +220,139 @@ export class Renderer {
     }
   }
 
+  // ─── 极光 ────────────────────────────────────────────────────────────────
+  _createAuroras() {
+    return AURORA_BANDS.map((b, i) => {
+      const targetOpacity = 0.18 + Math.random() * 0.10;
+      return {
+        ...b,
+        baseY: this.height * (0.10 + i * 0.07),
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.00015 + Math.random() * 0.00010,
+        amp:   this.height * (0.035 + Math.random() * 0.03),
+        opacity: targetOpacity,
+        targetOpacity,
+      };
+    });
+  }
+
+  _updateAuroras(dt) {
+    for (const a of this.auroras) {
+      a.phase += a.speed * dt;
+      // 用慢速 lerp 让 opacity 平滑出现/消隐
+      a.opacity += (a.targetOpacity - a.opacity) * 0.001 * dt;
+    }
+  }
+
+  _drawAuroras() {
+    const ctx = this.ctx, W = this.width;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    for (const a of this.auroras) {
+      const pts  = 120;
+      const step = W / pts;
+
+      // 用多层叠加模拟极光帘幕
+      for (let layer = 0; layer < 3; layer++) {
+        const layerPhase  = a.phase + layer * 0.8;
+        const layerAmp    = a.amp * (1 - layer * 0.2);
+        const layerOpacity = a.opacity * (1 - layer * 0.3);
+        const blur = 18 - layer * 4;
+
+        ctx.save();
+        ctx.beginPath();
+        for (let i = 0; i <= pts; i++) {
+          const x = i * step;
+          const wave = Math.sin(layerPhase + i * 0.18) * layerAmp
+                     + Math.sin(layerPhase * 1.5 + i * 0.08) * layerAmp * 0.3;
+          const y = a.baseY + wave;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+
+        ctx.strokeStyle = `hsla(${a.hue},${a.sat}%,${a.lig}%,${layerOpacity.toFixed(3)})`;
+        ctx.lineWidth   = 2 + layer * 1.5;
+        ctx.shadowColor = `hsla(${a.hue},${a.sat}%,${a.lig}%,0.6)`;
+        ctx.shadowBlur  = blur;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ─── 超空间飞行 ────────────────────────────────────────────────────────────
+  _startWarp() {
+    if (this.warp.active) return;
+    this.warp.active   = true;
+    this.warp.progress = 0;
+    // 生成从中心放射的光速线
+    const cx = this.width / 2, cy = this.height / 2;
+    this.warp.streaks = Array.from({ length: 220 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist  = 20 + Math.random() * 80;
+      return {
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        vx: Math.cos(angle),
+        vy: Math.sin(angle),
+        speed: 0.8 + Math.random() * 1.4,
+        len:   0.05 + Math.random() * 0.12,
+        color: `hsl(${200 + Math.random() * 60},90%,${70 + Math.random() * 20}%)`,
+      };
+    });
+  }
+
+  _updateWarp(dt) {
+    if (!this.warp.active) return;
+    this.warp.progress += dt * 0.0008; // 0→1 over ~1250ms
+    if (this.warp.progress >= 1) {
+      this.warp.active   = false;
+      this.warp.progress = 0;
+    }
+  }
+
+  _drawWarp() {
+    if (!this.warp.active && this.warp.progress === 0) return;
+    const ctx = this.ctx;
+    const p   = this.warp.progress;
+    const cx  = this.width / 2, cy = this.height / 2;
+    // 渐入渐出曲线
+    const intensity = p < 0.5 ? p * 2 : (1 - p) * 2;
+    const maxLen = Math.max(this.width, this.height) * 1.5;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = intensity;
+    for (const s of this.warp.streaks) {
+      const travelled = p * p * maxLen * s.speed;
+      const x1 = cx + (s.x - cx) + s.vx * travelled;
+      const y1 = cy + (s.y - cy) + s.vy * travelled;
+      const x0 = x1 - s.vx * travelled * s.len;
+      const y0 = y1 - s.vy * travelled * s.len;
+
+      const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(1, s.color);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5 + intensity * 1.5;
+      ctx.stroke();
+    }
+    // 中心发光
+    const flash = ctx.createRadialGradient(cx, cy, 0, cx, cy, 300 * intensity);
+    flash.addColorStop(0, `rgba(200,230,255,${0.15 * intensity})`);
+    flash.addColorStop(1, 'rgba(200,230,255,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 300 * intensity, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   render(time = 0) {
     const delta  = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) : 1;
     const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) : 16;
@@ -212,12 +360,16 @@ export class Renderer {
 
     this.particles.update(delta);
     this.updateNebulas(delta);
+    this._updateAuroras(deltaMs);
+    this._updateWarp(deltaMs);
     this.interaction.update(this.particles.stars);
 
     this.drawBackground();
     this.drawNebulas();
+    this._drawAuroras();
     this._drawStarsWithParallax();
     this.drawMeteors();
+    this._drawWarp();
     this.interaction.updateExplosions(deltaMs);
     this.interaction.drawConnections(this.ctx, this.particles.stars);
     this.interaction.drawExplosions(this.ctx);
