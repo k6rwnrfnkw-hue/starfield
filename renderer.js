@@ -80,6 +80,19 @@ export class Renderer {
         currentTheme = (currentTheme + 1) % THEMES.length;
         this._applyTheme();
       }
+      // P 键：暂停/恢复
+      if (e.code === 'KeyP') {
+        if (this.animationId) { this.stop(); this._paused = true; }
+        else { this._paused = false; this.start(); }
+      }
+      // S 键：保存截图
+      if (e.code === 'KeyS' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        const link = document.createElement('a');
+        link.download = `starfield-${Date.now()}.png`;
+        link.href = this.canvas.toDataURL('image/png');
+        link.click();
+      }
     });
 
     // 初始化星星 ID（连线去重用）
@@ -586,10 +599,13 @@ export class Renderer {
 
   _updateWarp(dt) {
     if (!this.warp.active) return;
-    this.warp.progress += dt * 0.0008; // 0→1 over ~1250ms
+    this.warp.progress += dt * 0.0008;
     if (this.warp.progress >= 1) {
       this.warp.active   = false;
       this.warp.progress = 0;
+      // 超空间结束：给所有星星开启短暂拖尾
+      for (const s of this.particles.stars)
+        s._warpTrail = 0.8 + Math.random() * 0.4;
     }
   }
 
@@ -700,12 +716,34 @@ export class Renderer {
 
   _drawStarsWithParallax() {
     const stars = this.particles.stars;
-    // 临时应用视差偏移
     for (const s of stars) {
       s._ox = s.x; s._oy = s.y;
       s.x += s.offsetX ?? 0;
       s.y += s.offsetY ?? 0;
     }
+
+    // 超空间拖尾：在星星前方画短线段
+    if (stars.some(s => s._warpTrail > 0)) {
+      this.ctx.save();
+      this.ctx.globalCompositeOperation = 'screen';
+      for (const s of stars) {
+        if (!s._warpTrail || s._warpTrail <= 0) continue;
+        const t = s._warpTrail;
+        const len = t * (20 + s.layer * 15);
+        const grad = this.ctx.createLinearGradient(s.x - len, s.y, s.x, s.y);
+        grad.addColorStop(0, 'rgba(180,220,255,0)');
+        grad.addColorStop(1, `rgba(200,230,255,${(t * 0.7).toFixed(3)})`);
+        this.ctx.beginPath();
+        this.ctx.moveTo(s.x - len, s.y);
+        this.ctx.lineTo(s.x, s.y);
+        this.ctx.strokeStyle = grad;
+        this.ctx.lineWidth = 0.5 + s.layer * 0.4;
+        this.ctx.stroke();
+        s._warpTrail -= 0.02;
+      }
+      this.ctx.restore();
+    }
+
     this.drawStars();
     for (const s of stars) { s.x = s._ox; s.y = s._oy; }
   }
