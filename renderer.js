@@ -77,12 +77,13 @@ export class Renderer {
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
 
-    // 单击：爆炸 + 震动附近星星 + 音效
+    // 单击：爆炸 + 震动附近星星 + 星云脉冲 + 音效
     this.canvas.addEventListener('click', (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       this.interaction.explode(x, y);
       this.interaction.shakeStarsAt(x, y, this.particles.stars);
+      this.pulseNebulaAt(x, y);
       playExplosion(0.8);
     });
 
@@ -158,26 +159,54 @@ export class Renderer {
 
   updateNebulas(dt) {
     for (const n of this.nebulas) {
-      // 缓慢漂移
       n.x += n.vx * dt;
       n.y += n.vy * dt;
-      // 边界弹回：离原点太远时反向
       const dx = n.x - n.ox, dy = n.y - n.oy;
       const limit = Math.min(this.width, this.height) * 0.12;
       if (Math.abs(dx) > limit) n.vx *= -1;
       if (Math.abs(dy) > limit) n.vy *= -1;
 
-      // 呼吸：opacity + scale 一起振荡
       n.phase += n.breathSpeed * dt;
       const breath = Math.sin(n.phase);
-      n.opacity = n.baseOpacity * (0.75 + 0.25 * breath);
-      n.scale   = 1 + 0.08 * breath;
+      const pulse  = n._pulse ?? 0;
+      n.opacity = n.baseOpacity * (0.75 + 0.25 * breath) * (1 + pulse * 1.8);
+      n.scale   = (1 + 0.08 * breath) * (1 + pulse * 0.25);
+      if (pulse > 0) n._pulse = Math.max(0, pulse - 0.003 * dt);
+    }
+  }
+
+  /** 爆炸或引力井崩塌时让附近星云闪亮 */
+  pulseNebulaAt(x, y) {
+    for (const n of this.nebulas) {
+      const dx = n.x - x, dy = n.y - y;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+      const r  = Math.max(n.rx, n.ry);
+      if (d < r * 1.5) n._pulse = Math.min(1, (n._pulse ?? 0) + (1 - d / (r * 1.5)) * 0.7);
     }
   }
 
   drawBackground() {
     this.ctx.fillStyle = '#000';
     this.ctx.fillRect(0, 0, this.width, this.height);
+    this._drawMilkyWay();
+  }
+
+  _drawMilkyWay() {
+    const ctx = this.ctx, W = this.width, H = this.height;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    // 从左下到右上的倾斜光带
+    const x0 = W * 0.05, y0 = H * 0.95;
+    const x1 = W * 0.95, y1 = H * 0.05;
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0,    'rgba(30,25,60,0)');
+    grad.addColorStop(0.3,  'rgba(50,40,100,0.045)');
+    grad.addColorStop(0.5,  'rgba(70,55,130,0.07)');
+    grad.addColorStop(0.7,  'rgba(50,40,100,0.045)');
+    grad.addColorStop(1,    'rgba(30,25,60,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   }
 
   drawNebulas() {
@@ -525,6 +554,13 @@ export class Renderer {
     this._updateScan(deltaMs);
     this.interaction.update(this.particles.stars);
     this.interaction.updateGravityWell(this.particles.stars, deltaMs);
+    if (this.interaction._collapsePos) {
+      const { x, y } = this.interaction._collapsePos;
+      this.pulseNebulaAt(x, y);
+      this.interaction.shakeStarsAt(x, y, this.particles.stars);
+      playExplosion(1.2);
+      this.interaction._collapsePos = null;
+    }
 
     this.drawBackground();
     this.drawNebulas();

@@ -100,9 +100,9 @@ export class Interaction {
     gw.life -= dt;
 
     if (gw.life <= 0) {
-      // 崩塌：在井位置触发爆炸
+      // 崩塌：记录位置后清除，由 renderer 处理爆炸+脉冲
+      this._collapsePos = { x: gw.x, y: gw.y };
       this.explode(gw.x, gw.y);
-      // 附近星星弹射出去
       for (const s of stars) {
         const dx = (s.x + (s.offsetX ?? 0)) - gw.x;
         const dy = (s.y + (s.offsetY ?? 0)) - gw.y;
