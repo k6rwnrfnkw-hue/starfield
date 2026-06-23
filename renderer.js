@@ -75,6 +75,9 @@ export class Renderer {
     this._fpsHistory = [];
     this._qualityLevel = 1; // 1=full, 0.7=medium, 0.4=low
 
+    // 时间减速（W键）
+    this._timeScale = 1.0;
+
     // 连击彩虹模式
     this._comboCount  = 0;
     this._comboTimer  = null;
@@ -84,6 +87,14 @@ export class Renderer {
       if (e.code === 'KeyT') {
         currentTheme = (currentTheme + 1) % THEMES.length;
         this._applyTheme();
+      }
+      // Q 键：流星暴（50颗流星雨 + 5彗星）
+      if (e.code === 'KeyQ') {
+        this._showToast('☄ 流星暴！');
+        for (let i = 0; i < 50; i++)
+          setTimeout(() => { this.particles.meteors.push(new Meteor(this.width, this.height)); playMeteor(); }, i * 35 + Math.random() * 20);
+        for (let i = 0; i < 5; i++)
+          setTimeout(() => this.particles.meteors.push(new Comet(this.width, this.height)), 200 + i * 300);
       }
       // N 键：新增随机星云（最多8个）
       if (e.code === 'KeyN') {
@@ -268,6 +279,20 @@ export class Renderer {
         for (let i = 0; i < 8; i++)
           setTimeout(() => { this.particles.meteors.push(new Meteor(this.width, this.height)); playMeteor(); }, i * 90);
         setTimeout(() => this.particles.meteors.push(new Comet(this.width, this.height)), 200);
+      }
+    });
+
+    // W 键：按住时间减速
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyW' && !e.repeat) {
+        this._timeScale = 0.08;
+        this._showToast('⏳ 时间减速');
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW') {
+        this._timeScale = 1.0;
+        this._showToast('▶ 时间恢复');
       }
     });
 
@@ -784,8 +809,9 @@ export class Renderer {
   }
 
   render(time = 0) {
-    const delta  = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) : 1;
-    const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) : 16;
+    const ts     = this._timeScale ?? 1;
+    const delta  = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) * ts : 1;
+    const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) * ts : 16;
     this.lastTime = time;
 
     // FPS 监测（每60帧采样一次）
