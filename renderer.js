@@ -66,6 +66,14 @@ export class Renderer {
     // 扫描光束状态
     this._scan = { active: false, x: 0, progress: 0, nextIn: 8000 + Math.random() * 8000 };
 
+    // FPS 自适应
+    this._fpsHistory = [];
+    this._qualityLevel = 1; // 1=full, 0.7=medium, 0.4=low
+
+    // 连击彩虹模式
+    this._comboCount  = 0;
+    this._comboTimer  = null;
+
     // 主题切换（T 键）
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyT') {
@@ -77,10 +85,39 @@ export class Renderer {
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
 
-    // 单击：爆炸 + 震动附近星星 + 星云脉冲 + 音效
+    // 单击：爆炸 + 震动 + 星云脉冲 + 音效 + 连击检测
     this.canvas.addEventListener('click', (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
+
+      this._comboCount++;
+      clearTimeout(this._comboTimer);
+      this._comboTimer = setTimeout(() => { this._comboCount = 0; }, 600);
+
+      if (this._comboCount >= 5) {
+        // 彩虹连击：5连爆炸弧形排列
+        this._comboCount = 0;
+        clearTimeout(this._comboTimer);
+        for (let i = 0; i < 7; i++) {
+          const angle = (i / 7) * Math.PI * 2;
+          const r = 80;
+          setTimeout(() => {
+            const ex = x + Math.cos(angle) * r;
+            const ey = y + Math.sin(angle) * r;
+            this.interaction.explode(ex, ey);
+            this.pulseNebulaAt(ex, ey);
+            playExplosion(0.5);
+          }, i * 60);
+        }
+        // 中心再来一个大的
+        setTimeout(() => {
+          this.interaction.explode(x, y);
+          this.interaction.shakeStarsAt(x, y, this.particles.stars);
+          playExplosion(1.2);
+        }, 450);
+        return;
+      }
+
       this.interaction.explode(x, y);
       this.interaction.shakeStarsAt(x, y, this.particles.stars);
       this.pulseNebulaAt(x, y);
@@ -601,6 +638,29 @@ export class Renderer {
     const delta  = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) : 1;
     const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) : 16;
     this.lastTime = time;
+
+    // FPS 监测（每60帧采样一次）
+    if (this.lastTime > 0) {
+      const fps = 1000 / (deltaMs || 16);
+      this._fpsHistory.push(fps);
+      if (this._fpsHistory.length > 60) {
+        this._fpsHistory.shift();
+        const avgFps = this._fpsHistory.reduce((a, b) => a + b) / this._fpsHistory.length;
+        if (avgFps < 28 && this._qualityLevel > 0.4) {
+          this._qualityLevel = Math.max(0.4, this._qualityLevel - 0.1);
+          const target = Math.floor(this.particles.stars.length * 0.85);
+          const remove = this.particles.stars.length - target;
+          if (remove > 0) {
+            const removed = this.particles.stars.splice(-remove);
+            for (const s of removed)
+              this.particles.starsByLayer[s.layer]?.splice(
+                this.particles.starsByLayer[s.layer].indexOf(s), 1);
+          }
+        } else if (avgFps > 55 && this._qualityLevel < 1 && this.particles.stars.length < 400) {
+          this._qualityLevel = Math.min(1, this._qualityLevel + 0.05);
+        }
+      }
+    }
 
     const prevNovas = this.particles.stars.filter(s => s._novaLife > 0).length;
     this.particles.update(delta);
