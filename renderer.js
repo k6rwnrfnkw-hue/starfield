@@ -1,4 +1,4 @@
-import { ParticleSystem, Meteor } from './particle-system.js';
+import { ParticleSystem, Meteor, Comet } from './particle-system.js';
 import { Interaction }            from './interaction.js';
 
 const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
@@ -72,12 +72,13 @@ export class Renderer {
       this.interaction.createGravityWell(e.clientX - rect.left, e.clientY - rect.top);
     });
 
-    // 空格：流星雨（8颗依次喷发）
+    // 空格：流星雨（8颗流星 + 1颗彗星）
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
         for (let i = 0; i < 8; i++)
-          setTimeout(() => this.particles.meteors.push(new Meteor(this.width, this.height)), i * 100);
+          setTimeout(() => this.particles.meteors.push(new Meteor(this.width, this.height)), i * 90);
+        setTimeout(() => this.particles.meteors.push(new Comet(this.width, this.height)), 200);
       }
     });
 
@@ -210,37 +211,68 @@ export class Renderer {
 
   drawMeteors() {
     for (const meteor of this.particles.meteors) {
-      if (meteor.trailParticles.length < 2)
-        continue;
+      if (meteor.trailParticles.length < 2) continue;
 
+      const isComet = meteor.isComet;
       const head = meteor.trailParticles[0];
       const tail = meteor.trailParticles[meteor.trailParticles.length - 1];
-      const gradient = this.ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
-
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-      gradient.addColorStop(0.55, 'rgba(160, 205, 255, 0.35)');
-      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
 
       this.ctx.save();
-      this.ctx.strokeStyle = gradient;
-      this.ctx.lineWidth = 2.4;
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
-      this.ctx.shadowColor = 'rgba(150, 205, 255, 0.7)';
-      this.ctx.shadowBlur = 12;
-      this.ctx.beginPath();
-      this.ctx.moveTo(tail.x, tail.y);
 
-      for (let index = meteor.trailParticles.length - 2; index >= 0; index -= 1) {
-        const point = meteor.trailParticles[index];
-        this.ctx.lineTo(point.x, point.y);
+      if (isComet) {
+        // 彗星：双层尾迹（宽发光层 + 细白核心）
+        for (let pass = 0; pass < 2; pass++) {
+          const gradient = this.ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+          if (pass === 0) {
+            gradient.addColorStop(0, 'rgba(100,180,255,0)');
+            gradient.addColorStop(0.5, 'rgba(140,210,255,0.25)');
+            gradient.addColorStop(1, 'rgba(200,230,255,0.7)');
+            this.ctx.lineWidth = 7;
+            this.ctx.shadowColor = 'rgba(120,200,255,0.8)';
+            this.ctx.shadowBlur = 20;
+          } else {
+            gradient.addColorStop(0, 'rgba(255,255,255,0)');
+            gradient.addColorStop(0.6, 'rgba(220,240,255,0.6)');
+            gradient.addColorStop(1, 'rgba(255,255,255,1)');
+            this.ctx.lineWidth = 1.8;
+            this.ctx.shadowBlur = 0;
+          }
+          this.ctx.strokeStyle = gradient;
+          this.ctx.beginPath();
+          this.ctx.moveTo(tail.x, tail.y);
+          for (let i = meteor.trailParticles.length - 2; i >= 0; i--)
+            this.ctx.lineTo(meteor.trailParticles[i].x, meteor.trailParticles[i].y);
+          this.ctx.stroke();
+        }
+        // 彗头光晕
+        this.ctx.shadowColor = 'rgba(180,220,255,0.9)';
+        this.ctx.shadowBlur = 25;
+        this.ctx.fillStyle = 'rgba(255,255,255,1)';
+        this.ctx.beginPath();
+        this.ctx.arc(head.x, head.y, 4.5, 0, Math.PI * 2);
+        this.ctx.fill();
+      } else {
+        // 普通流星
+        const gradient = this.ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+        gradient.addColorStop(0, 'rgba(255,255,255,0)');
+        gradient.addColorStop(0.55, 'rgba(160,205,255,0.35)');
+        gradient.addColorStop(1, 'rgba(255,255,255,0.95)');
+        this.ctx.strokeStyle = gradient;
+        this.ctx.lineWidth = 2.4;
+        this.ctx.shadowColor = 'rgba(150,205,255,0.7)';
+        this.ctx.shadowBlur = 12;
+        this.ctx.beginPath();
+        this.ctx.moveTo(tail.x, tail.y);
+        for (let i = meteor.trailParticles.length - 2; i >= 0; i--)
+          this.ctx.lineTo(meteor.trailParticles[i].x, meteor.trailParticles[i].y);
+        this.ctx.stroke();
+        this.ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        this.ctx.beginPath();
+        this.ctx.arc(head.x, head.y, 2.8, 0, Math.PI * 2);
+        this.ctx.fill();
       }
-
-      this.ctx.stroke();
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-      this.ctx.beginPath();
-      this.ctx.arc(head.x, head.y, 2.8, 0, Math.PI * 2);
-      this.ctx.fill();
       this.ctx.restore();
     }
   }

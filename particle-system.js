@@ -1,6 +1,7 @@
-const STAR_COUNT_MIN = 300;
-const STAR_COUNT_MAX = 500;
-const METEOR_SPAWN_PROBABILITY = 0.003;
+const STAR_COUNT_MIN = 320;
+const STAR_COUNT_MAX = 520;
+const METEOR_SPAWN_PROBABILITY = 0.0025;
+const COMET_SPAWN_PROBABILITY  = 0.0003; // 慢速大彗星，更壮观
 
 const LAYER_CONFIG = [
   { zMin: 2.6, zMax: 3.4, sizeMin: 0.7, sizeMax: 1.4, speedMin: 0.03, speedMax: 0.08, brightnessMin: 0.35, brightnessMax: 0.65 },
@@ -101,7 +102,7 @@ export class Meteor {
     if (!this.active) {
       this.trailParticles = this.trailParticles
         .map((particle) => ({ ...particle, age: particle.age + delta }))
-        .filter((particle) => particle.age < 22);
+        .filter((particle) => particle.age < 30);
       return;
     }
 
@@ -112,15 +113,58 @@ export class Meteor {
       y: this.start.y + this.dy * progress,
     };
 
-    // 记录尾迹点，渲染时按年龄淡出，避免每帧重算整条尾巴。
     this.trailParticles.unshift({ x: head.x, y: head.y, age: 0 });
     this.trailParticles = this.trailParticles
       .map((particle) => ({ ...particle, age: particle.age + delta }))
-      .filter((particle) => particle.age < 22)
-      .slice(0, 28);
+      .filter((particle) => particle.age < 30)
+      .slice(0, 36);
 
     if (progress >= 1 || this.life >= this.maxLife)
       this.active = false;
+  }
+}
+
+export class Comet extends Meteor {
+  constructor(width, height) {
+    super(width, height);
+    // 彗星：更长更慢，从边缘穿越全屏
+    const startX = width * (0.8 + Math.random() * 0.4);
+    const startY = -height * 0.05;
+    const angle  = Math.PI * (0.6 + Math.random() * 0.2);
+    const length = Math.sqrt(width * width + height * height);
+
+    this.start = { x: startX, y: startY };
+    this.end   = { x: startX + Math.cos(angle) * length, y: startY + Math.sin(angle) * length };
+    this.dx = this.end.x - this.start.x;
+    this.dy = this.end.y - this.start.y;
+    this.distance  = Math.hypot(this.dx, this.dy) || 1;
+    this.velocity  = 3 + Math.random() * 3;   // 速度是普通流星的1/4
+    this.maxLife   = this.distance / this.velocity * 1.5;
+    this.trailParticles = [];
+    this.life = 0;
+    this.active = true;
+    this.isComet = true;
+  }
+
+  update(delta = 1) {
+    if (!this.active) {
+      this.trailParticles = this.trailParticles
+        .map(p => ({ ...p, age: p.age + delta }))
+        .filter(p => p.age < 60);
+      return;
+    }
+    this.life += delta;
+    const progress = Math.min(1, (this.life * this.velocity) / this.distance);
+    const head = {
+      x: this.start.x + this.dx * progress,
+      y: this.start.y + this.dy * progress,
+    };
+    this.trailParticles.unshift({ x: head.x, y: head.y, age: 0 });
+    this.trailParticles = this.trailParticles
+      .map(p => ({ ...p, age: p.age + delta }))
+      .filter(p => p.age < 60)
+      .slice(0, 60);
+    if (progress >= 1 || this.life >= this.maxLife) this.active = false;
   }
 }
 
@@ -169,8 +213,8 @@ export class ParticleSystem {
         layer2[Math.floor(Math.random() * layer2.length)].triggerNova();
     }
 
-    if (Meteor.shouldSpawn())
-      this.meteors.push(new Meteor(this.width, this.height));
+    if (Meteor.shouldSpawn()) this.meteors.push(new Meteor(this.width, this.height));
+    if (Math.random() < COMET_SPAWN_PROBABILITY * delta) this.meteors.push(new Comet(this.width, this.height));
 
     for (const meteor of this.meteors)
       meteor.update(delta);
@@ -179,4 +223,4 @@ export class ParticleSystem {
   }
 }
 
-export { LAYER_CONFIG, METEOR_SPAWN_PROBABILITY };
+export { LAYER_CONFIG, METEOR_SPAWN_PROBABILITY, COMET_SPAWN_PROBABILITY };
