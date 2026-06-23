@@ -140,6 +140,74 @@ export function playMeteor() {
   osc.stop(now + 0.65);
 }
 
+// ── 环境音乐 ──────────────────────────────────────────────────────────────
+let _ambientNodes = null;
+
+/** 启动/停止宇宙环境音乐 */
+export function toggleAmbient() {
+  if (_ambientNodes) {
+    _ambientNodes.forEach(n => { try { n.stop?.(); n.disconnect?.(); } catch(e){} });
+    _ambientNodes = null;
+    return false; // 已停止
+  }
+
+  const ac = getCtx();
+  const nodes = [];
+  const masterGain = ac.createGain();
+  masterGain.gain.value = 0;
+  masterGain.connect(ac.destination);
+  nodes.push(masterGain);
+
+  // 渐入
+  masterGain.gain.linearRampToValueAtTime(0.08, ac.currentTime + 3);
+
+  // 主和弦（D小调氛围）
+  const chordFreqs = [36.7, 55, 73.4, 110, 146.8]; // D1 A1 D2 A2 D3
+  chordFreqs.forEach((freq, i) => {
+    const osc = ac.createOscillator();
+    osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+    osc.frequency.value = freq;
+
+    // 慢速颤音 LFO
+    const lfo = ac.createOscillator();
+    lfo.frequency.value = 0.05 + i * 0.03;
+    const lfoGain = ac.createGain();
+    lfoGain.gain.value = freq * 0.003;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    const g = ac.createGain();
+    g.gain.value = 0.12 / (i + 1);
+    osc.connect(g);
+    g.connect(masterGain);
+
+    osc.start();
+    lfo.start();
+    nodes.push(osc, lfo, g, lfoGain);
+  });
+
+  // 高频闪光（偶发晶莹音）
+  const sparkTimer = setInterval(() => {
+    if (!_ambientNodes) { clearInterval(sparkTimer); return; }
+    const ac2 = getCtx();
+    const osc = ac2.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 880 * (1 + Math.floor(Math.random() * 4) * 0.5);
+    const g = ac2.createGain();
+    g.gain.setValueAtTime(0, ac2.currentTime);
+    g.gain.linearRampToValueAtTime(0.03, ac2.currentTime + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, ac2.currentTime + 2.5);
+    osc.connect(g);
+    g.connect(ac2.destination);
+    osc.start();
+    osc.stop(ac2.currentTime + 2.6);
+  }, 3000 + Math.random() * 4000);
+
+  _ambientNodes = nodes;
+  _ambientNodes._sparkTimer = sparkTimer;
+  return true; // 已启动
+}
+
 /** 超新星：明亮叮鸣 */
 export function playNova() {
   const ac = getCtx();

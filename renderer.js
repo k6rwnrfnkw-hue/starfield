@@ -1,6 +1,6 @@
 import { ParticleSystem, Meteor, Comet } from './particle-system.js';
 import { Interaction }            from './interaction.js';
-import { playExplosion, playWarp, playGravityWell, playMeteor, playNova } from './audio.js';
+import { playExplosion, playWarp, playGravityWell, playMeteor, playNova, toggleAmbient } from './audio.js';
 
 // 星云主题：[nebula colors × 4, aurora hue × 3]
 const THEMES = [
@@ -79,6 +79,11 @@ export class Renderer {
       if (e.code === 'KeyT') {
         currentTheme = (currentTheme + 1) % THEMES.length;
         this._applyTheme();
+      }
+      // M 键：环境音乐
+      if (e.code === 'KeyM') {
+        const on = toggleAmbient();
+        this._showToast(on ? '♪ 音乐开启' : '♪ 音乐关闭');
       }
       // P 键：暂停/恢复
       if (e.code === 'KeyP') {
@@ -282,6 +287,27 @@ export class Renderer {
       n.scale   = (1 + 0.08 * breath) * (1 + pulse * 0.25);
       if (pulse > 0) n._pulse = Math.max(0, pulse - 0.003 * dt);
     }
+  }
+
+  /** 屏幕中央短暂文字提示 */
+  _showToast(msg) {
+    let el = document.getElementById('_toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '_toast';
+      Object.assign(el.style, {
+        position: 'fixed', top: '50%', left: '50%',
+        transform: 'translate(-50%,-50%)',
+        color: 'rgba(200,220,255,0.9)', font: '16px system-ui',
+        pointerEvents: 'none', transition: 'opacity 0.4s',
+        textShadow: '0 0 10px rgba(180,210,255,0.8)'
+      });
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, 1500);
   }
 
   /** 爆炸或引力井崩塌时让附近星云闪亮 */
@@ -680,8 +706,24 @@ export class Renderer {
 
     const prevNovas = this.particles.stars.filter(s => s._novaLife > 0).length;
     this.particles.update(delta);
-    const newNovas  = this.particles.stars.filter(s => s._novaLife > 0.98).length;
-    if (newNovas > prevNovas) playNova();
+    const justExploded = this.particles.stars.filter(s => s._novaLife > 0.98 && !(s._chainTriggered));
+    if (justExploded.length > 0) {
+      playNova();
+      // 链式：在120px内随机引爆1颗相邻 layer2 星（30%概率）
+      for (const nova of justExploded) {
+        nova._chainTriggered = true;
+        if (Math.random() > 0.3) continue;
+        const nearby = this.particles.starsByLayer[2].filter(s => {
+          if (s._novaLife > 0 || s._chainTriggered) return false;
+          const dx = s.x - nova.x, dy = s.y - nova.y;
+          return dx*dx + dy*dy < 120*120;
+        });
+        if (nearby.length > 0) {
+          const target = nearby[Math.floor(Math.random() * nearby.length)];
+          setTimeout(() => { target.triggerNova(); target._chainTriggered = true; }, 400 + Math.random() * 600);
+        }
+      }
+    }
 
     this.updateNebulas(delta);
     this._updateAuroras(deltaMs);
