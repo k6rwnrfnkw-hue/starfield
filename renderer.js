@@ -80,6 +80,18 @@ export class Renderer {
         currentTheme = (currentTheme + 1) % THEMES.length;
         this._applyTheme();
       }
+      // R 键：星星大散射
+      if (e.code === 'KeyR') {
+        const cx = this.width / 2, cy = this.height / 2;
+        for (const s of this.particles.stars) {
+          const dx = s.x - cx, dy = s.y - cy;
+          const d  = Math.sqrt(dx*dx + dy*dy) || 1;
+          const f  = (0.8 + Math.random() * 0.6) * (1 + s.layer * 0.3);
+          s.offsetX = (s.offsetX ?? 0) + (dx/d) * f * 60;
+          s.offsetY = (s.offsetY ?? 0) + (dy/d) * f * 60;
+        }
+        this._showToast('✦ 星散');
+      }
       // M 键：环境音乐
       if (e.code === 'KeyM') {
         const on = toggleAmbient();
@@ -144,6 +156,26 @@ export class Renderer {
 
     // 双击：超空间飞行 + 音效
     this.canvas.addEventListener('dblclick', () => { this._startWarp(); playWarp(); });
+
+    // 按住：粒子泉
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const rect = this.canvas.getBoundingClientRect();
+      this.interaction.fountain = { x: e.clientX - rect.left, y: e.clientY - rect.top, active: true };
+    });
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this.interaction.fountain?.active) {
+        const rect = this.canvas.getBoundingClientRect();
+        this.interaction.fountain.x = e.clientX - rect.left;
+        this.interaction.fountain.y = e.clientY - rect.top;
+      }
+    });
+    this.canvas.addEventListener('mouseup', () => {
+      if (this.interaction.fountain) this.interaction.fountain.active = false;
+    });
+    this.canvas.addEventListener('mouseleave', () => {
+      if (this.interaction.fountain) this.interaction.fountain.active = false;
+    });
 
     // 右键：引力井 + 音效
     this.canvas.addEventListener('contextmenu', (e) => {
@@ -746,6 +778,7 @@ export class Renderer {
     this.drawMeteors();
     this._drawScan();
     this._drawWarp();
+    this.interaction.updateFountain(deltaMs);
     this.interaction.updateExplosions(deltaMs);
     this.interaction.updateCursorSparks(deltaMs);
     this.interaction.drawConnections(this.ctx, this.particles.stars);

@@ -21,9 +21,10 @@ export class Interaction {
     this.my = window.innerHeight / 2;
     this._nx = 0;
     this._ny = 0;
-    this.explosions  = [];
-    this.gravityWell = null;
-    this.cursorSparks = []; // 鼠标拖尾粒子
+    this.explosions   = [];
+    this.gravityWell  = null;
+    this.cursorSparks = [];
+    this.fountain     = null; // { x, y, active }
     this._prevMx = this.mx;
     this._prevMy = this.my;
 
@@ -58,6 +59,29 @@ export class Interaction {
       });
     }
     if (this.cursorSparks.length > 120) this.cursorSparks.splice(0, 20);
+  }
+
+  /** 粒子泉：每帧从 fountain 位置喷射 */
+  updateFountain(dt) {
+    if (!this.fountain?.active) return;
+    const { x, y } = this.fountain;
+    const count = Math.ceil(dt * 0.25); // ~4颗/帧@60fps
+    for (let i = 0; i < count; i++) {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.4; // 向上扇形
+      const speed = 1.5 + Math.random() * 3.5;
+      const hue   = 180 + Math.random() * 120;
+      this.cursorSparks.push({
+        x: x + (Math.random() - 0.5) * 8,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 800 + Math.random() * 600,
+        maxLife: 1400,
+        size: 1 + Math.random() * 2,
+        hue,
+      });
+    }
+    if (this.cursorSparks.length > 500) this.cursorSparks.splice(0, 50);
   }
 
   updateCursorSparks(dt) {
