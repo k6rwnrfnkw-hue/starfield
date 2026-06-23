@@ -25,8 +25,21 @@ export class Star {
     this.z = randomBetween(config.zMin, config.zMax);
     this.size = randomBetween(config.sizeMin, config.sizeMax);
     this.brightness = randomBetween(config.brightnessMin, config.brightnessMax);
+    this._baseBrightness = this.brightness;
     this.velocity = randomBetween(config.speedMin, config.speedMax);
     this.layer = layer;
+
+    // 随机闪烁状态
+    this._twinklePhase = Math.random() * Math.PI * 2;
+    this._twinkleSpeed = 0.01 + Math.random() * 0.025;
+    this._twinkleAmp   = 0.08 + Math.random() * 0.12;
+
+    // 超新星状态
+    this._novaLife = 0;
+  }
+
+  triggerNova() {
+    this._novaLife = 1.0; // 1 = peak, counts down to 0
   }
 
   update(width, height, delta = 1) {
@@ -39,10 +52,20 @@ export class Star {
       this.x = width + this.size;
       this.y = Math.random() * height;
     }
-
     if (this.y > height + this.size) {
       this.y = -this.size;
       this.x = Math.random() * width;
+    }
+
+    // 常规闪烁
+    this._twinklePhase += this._twinkleSpeed * delta;
+    this.brightness = this._baseBrightness + Math.sin(this._twinklePhase) * this._twinkleAmp;
+
+    // 超新星衰减
+    if (this._novaLife > 0) {
+      this._novaLife -= 0.008 * delta;
+      if (this._novaLife < 0) this._novaLife = 0;
+      this.brightness = Math.max(this.brightness, this._novaLife * 3.5);
     }
   }
 }
@@ -138,6 +161,13 @@ export class ParticleSystem {
   update(delta = 1) {
     for (const star of this.stars)
       star.update(this.width, this.height, delta);
+
+    // 随机超新星：约每 4 秒触发一颗
+    if (Math.random() < 0.0004 * delta) {
+      const layer2 = this.starsByLayer[2];
+      if (layer2.length > 0)
+        layer2[Math.floor(Math.random() * layer2.length)].triggerNova();
+    }
 
     if (Meteor.shouldSpawn())
       this.meteors.push(new Meteor(this.width, this.height));

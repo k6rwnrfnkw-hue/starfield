@@ -65,6 +65,13 @@ export class Renderer {
     // 双击：超空间飞行
     this.canvas.addEventListener('dblclick', () => this._startWarp());
 
+    // 右键：引力井
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      this.interaction.createGravityWell(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
     window.addEventListener('resize', () => this.resize(), { passive: true });
   }
 
@@ -173,6 +180,15 @@ export class Renderer {
         if (layer === 2) {
           this.ctx.shadowColor = 'rgba(190, 220, 255, 0.9)';
           this.ctx.shadowBlur = 8 + star.size * 2;
+        }
+
+        // 超新星光晕
+        if (star._novaLife > 0) {
+          const nl = star._novaLife;
+          this.ctx.shadowColor = `rgba(255,${Math.floor(180 + 75 * nl)},${Math.floor(100 + 155 * nl)},0.95)`;
+          this.ctx.shadowBlur  = 20 + nl * 60;
+          this.ctx.globalAlpha = Math.min(1, alpha + nl * 0.6);
+          this.ctx.fillStyle   = `rgb(255,${Math.floor(240 * nl + 255 * (1 - nl))},${Math.floor(200 * nl + 255 * (1 - nl))})`;
         }
 
         this.ctx.beginPath();
@@ -363,6 +379,7 @@ export class Renderer {
     this._updateAuroras(deltaMs);
     this._updateWarp(deltaMs);
     this.interaction.update(this.particles.stars);
+    this.interaction.updateGravityWell(this.particles.stars, deltaMs);
 
     this.drawBackground();
     this.drawNebulas();
@@ -373,6 +390,7 @@ export class Renderer {
     this.interaction.updateExplosions(deltaMs);
     this.interaction.drawConnections(this.ctx, this.particles.stars);
     this.interaction.drawExplosions(this.ctx);
+    this.interaction.drawGravityWell(this.ctx);
 
     this.animationId = window.requestAnimationFrame((nextTime) => this.render(nextTime));
   }

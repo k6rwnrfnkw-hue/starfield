@@ -21,12 +21,70 @@ export class Interaction {
     this.my = window.innerHeight / 2;
     this._nx = 0;
     this._ny = 0;
-    this.explosions = []; // 活跃爆炸列表
+    this.explosions  = [];
+    this.gravityWell = null; // { x, y, strength, life, maxLife }
 
     window.addEventListener('mousemove', e => {
       this.mx = e.clientX;
       this.my = e.clientY;
     }, { passive: true });
+  }
+
+  /** 在 (x, y) 创建引力井 */
+  createGravityWell(x, y) {
+    this.gravityWell = { x, y, strength: 0.25, life: 3000, maxLife: 3000 };
+  }
+
+  /** 更新引力井，把附近星星向中心拉 */
+  updateGravityWell(stars, dt) {
+    const gw = this.gravityWell;
+    if (!gw) return;
+    gw.life -= dt;
+    if (gw.life <= 0) { this.gravityWell = null; return; }
+
+    const maxR = 280, str = gw.strength;
+    for (const s of stars) {
+      const dx = gw.x - (s.x + (s.offsetX ?? 0));
+      const dy = gw.y - (s.y + (s.offsetY ?? 0));
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      if (d < maxR && d > 2) {
+        const f = (str * (1 - d / maxR) * dt) / d;
+        s.offsetX = (s.offsetX ?? 0) + dx * f;
+        s.offsetY = (s.offsetY ?? 0) + dy * f;
+      }
+    }
+  }
+
+  /** 绘制引力井光环 */
+  drawGravityWell(ctx) {
+    const gw = this.gravityWell;
+    if (!gw) return;
+    const t  = gw.life / gw.maxLife;
+    const pulse = Date.now() * 0.003;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (let ring = 0; ring < 3; ring++) {
+      const r = (30 + ring * 50) * (1 + 0.06 * Math.sin(pulse + ring));
+      const a = t * (0.3 - ring * 0.08);
+      ctx.beginPath();
+      ctx.arc(gw.x, gw.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(180,140,255,${a.toFixed(3)})`;
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = 'rgba(180,140,255,0.7)';
+      ctx.shadowBlur  = 12;
+      ctx.stroke();
+    }
+    // 中心暗核
+    const core = ctx.createRadialGradient(gw.x, gw.y, 0, gw.x, gw.y, 28);
+    core.addColorStop(0, `rgba(0,0,0,${(t * 0.6).toFixed(3)})`);
+    core.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(gw.x, gw.y, 28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   /** 在 (x, y) 触发一次爆炸 */
