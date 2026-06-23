@@ -1,3 +1,4 @@
 import { Renderer } from './renderer.js';
 
-new Renderer().start();
+window._sf = new Renderer();
+window._sf.start();

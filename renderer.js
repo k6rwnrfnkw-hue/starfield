@@ -1,6 +1,6 @@
 import { ParticleSystem, Meteor, Comet } from './particle-system.js';
 import { Interaction }            from './interaction.js';
-import { playExplosion, playWarp, playGravityWell, playMeteor, playNova, toggleAmbient } from './audio.js';
+import { playExplosion, playWarp, playGravityWell, playMeteor, playNova, toggleAmbient, playSolarWind } from './audio.js';
 
 // 星云主题：[nebula colors × 4, aurora hue × 3]
 const THEMES = [
@@ -54,6 +54,8 @@ export class Renderer {
     this.canvas.style.width = '100vw';
     this.canvas.style.height = '100vh';
 
+    window._sf = this; // 调试用
+
     this.resize();
     this.particles   = new ParticleSystem(this.width, this.height);
     this.nebulas     = this.createNebulas();
@@ -65,6 +67,9 @@ export class Renderer {
 
     // 扫描光束状态
     this._scan = { active: false, x: 0, progress: 0, nextIn: 8000 + Math.random() * 8000 };
+
+    // 太阳风（周期性水平冲击波）
+    this._solarWind = { active: false, x: -50, nextIn: 18000 + Math.random() * 12000 };
 
     // FPS 自适应
     this._fpsHistory = [];
@@ -79,6 +84,30 @@ export class Renderer {
       if (e.code === 'KeyT') {
         currentTheme = (currentTheme + 1) % THEMES.length;
         this._applyTheme();
+      }
+      // N 键：新增随机星云（最多8个）
+      if (e.code === 'KeyN') {
+        if (this.nebulas.length < 8) {
+          const t = THEMES[currentTheme];
+          const color = t.nebulas[Math.floor(Math.random() * t.nebulas.length)];
+          const nx = 0.1 + Math.random() * 0.8;
+          const ny = 0.2 + Math.random() * 0.6;
+          this.nebulas.push({
+            x: nx * this.width, y: ny * this.height,
+            ox: nx * this.width, oy: ny * this.height,
+            rx: (0.2 + Math.random() * 0.25) * this.width,
+            ry: (0.12 + Math.random() * 0.15) * this.height,
+            color,
+            baseOpacity: 0.25 + Math.random() * 0.2,
+            opacity: 0,
+            vx: (Math.random() - 0.5) * 0.015,
+            vy: (Math.random() - 0.5) * 0.010,
+            phase: Math.random() * Math.PI * 2,
+            breathSpeed: 0.0004 + Math.random() * 0.0003,
+            scale: 1, _pulse: 0.8, _px: 0, _py: 0,
+          });
+          this._showToast(`✦ 星云+${this.nebulas.length}`);
+        } else { this._showToast('已达上限 8 个星云'); }
       }
       // R 键：星星大散射
       if (e.code === 'KeyR') {
@@ -572,6 +601,52 @@ export class Renderer {
     this.ctx.restore();
   }
 
+  // ─── 太阳风 ──────────────────────────────────────────────────────────────
+  _updateSolarWind(dt) {
+    if (!this._solarWind.active) {
+      this._solarWind.nextIn -= dt;
+      if (this._solarWind.nextIn <= 0) {
+        this._solarWind.active = true;
+        this._solarWind.x = -60;
+        this._solarWind.nextIn = 20000 + Math.random() * 15000;
+        playSolarWind();
+        this._showToast('☀ 太阳风');
+      }
+      return;
+    }
+    // 波前以恒定速度横扫屏幕
+    const speed = this.width / 1800; // ~1.8秒过屏
+    const prevX = this._solarWind.x;
+    this._solarWind.x += speed * dt;
+
+    // 波前经过时推动星星向右
+    for (const s of this.particles.stars) {
+      const sx = s.x + (s.offsetX ?? 0);
+      if (sx >= prevX && sx < this._solarWind.x) {
+        s.offsetX = (s.offsetX ?? 0) + (25 + s.layer * 10) * (0.5 + Math.random() * 0.5);
+        s.offsetY = (s.offsetY ?? 0) + (Math.random() - 0.5) * 8;
+      }
+    }
+
+    if (this._solarWind.x > this.width + 60) this._solarWind.active = false;
+  }
+
+  _drawSolarWind() {
+    if (!this._solarWind.active) return;
+    const ctx = this.ctx;
+    const x = this._solarWind.x;
+    const H = this.height;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const grad = ctx.createLinearGradient(x - 80, 0, x + 20, 0);
+    grad.addColorStop(0,   'rgba(255,200,100,0)');
+    grad.addColorStop(0.6, 'rgba(255,210,130,0.035)');
+    grad.addColorStop(1,   'rgba(255,230,180,0.06)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - 80, 0, 100, H);
+    ctx.restore();
+  }
+
   // ─── 极光 ────────────────────────────────────────────────────────────────
   _createAuroras() {
     return AURORA_BANDS.map((b, i) => {
@@ -757,10 +832,17 @@ export class Renderer {
       }
     }
 
+    // 星星偏移衰减（散射/太阳风后缓缓归位）
+    for (const s of this.particles.stars) {
+      if (s.offsetX) s.offsetX *= 0.96;
+      if (s.offsetY) s.offsetY *= 0.96;
+    }
+
     this.updateNebulas(delta);
     this._updateAuroras(deltaMs);
     this._updateWarp(deltaMs);
     this._updateScan(deltaMs);
+    this._updateSolarWind(deltaMs);
     this.interaction.update(this.particles.stars);
     this.interaction.updateGravityWell(this.particles.stars, deltaMs);
     if (this.interaction._collapsePos) {
@@ -777,6 +859,7 @@ export class Renderer {
     this._drawStarsWithParallax();
     this.drawMeteors();
     this._drawScan();
+    this._drawSolarWind();
     this._drawWarp();
     this.interaction.updateFountain(deltaMs);
     this.interaction.updateExplosions(deltaMs);

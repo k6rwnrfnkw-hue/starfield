@@ -208,6 +208,52 @@ export function toggleAmbient() {
   return true; // 已启动
 }
 
+/** 太阳风：水平扫除低轰嗡声 */
+export function playSolarWind() {
+  const ac = getCtx();
+  const now = ac.currentTime;
+  const dur = 2.0;
+
+  // 宽频噪声带
+  const bufLen = Math.floor(ac.sampleRate * dur);
+  const buf = ac.createBuffer(1, bufLen, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+  const noise = ac.createBufferSource();
+  noise.buffer = buf;
+
+  const hipass = ac.createBiquadFilter();
+  hipass.type = 'highpass';
+  hipass.frequency.value = 400;
+
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0, now);
+  env.gain.linearRampToValueAtTime(0.07, now + 0.3);
+  env.gain.setValueAtTime(0.07, now + dur - 0.4);
+  env.gain.linearRampToValueAtTime(0, now + dur);
+
+  noise.connect(hipass);
+  hipass.connect(env);
+  env.connect(ac.destination);
+  noise.start(now);
+  noise.stop(now + dur);
+
+  // 低频吼叫
+  const osc = ac.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(60, now);
+  osc.frequency.linearRampToValueAtTime(100, now + dur * 0.5);
+  osc.frequency.linearRampToValueAtTime(40, now + dur);
+  const oscEnv = ac.createGain();
+  oscEnv.gain.setValueAtTime(0, now);
+  oscEnv.gain.linearRampToValueAtTime(0.06, now + 0.2);
+  oscEnv.gain.linearRampToValueAtTime(0, now + dur);
+  osc.connect(oscEnv);
+  oscEnv.connect(ac.destination);
+  osc.start(now);
+  osc.stop(now + dur);
+}
+
 /** 超新星：明亮叮鸣 */
 export function playNova() {
   const ac = getCtx();
