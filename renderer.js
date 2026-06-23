@@ -1,5 +1,6 @@
 import { ParticleSystem, Meteor, Comet } from './particle-system.js';
 import { Interaction }            from './interaction.js';
+import { playExplosion, playWarp, playGravityWell, playMeteor, playNova } from './audio.js';
 
 // 星云主题：[nebula colors × 4, aurora hue × 3]
 const THEMES = [
@@ -76,30 +77,32 @@ export class Renderer {
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
 
-    // 单击：爆炸 + 震动附近星星
+    // 单击：爆炸 + 震动附近星星 + 音效
     this.canvas.addEventListener('click', (e) => {
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       this.interaction.explode(x, y);
       this.interaction.shakeStarsAt(x, y, this.particles.stars);
+      playExplosion(0.8);
     });
 
-    // 双击：超空间飞行
-    this.canvas.addEventListener('dblclick', () => this._startWarp());
+    // 双击：超空间飞行 + 音效
+    this.canvas.addEventListener('dblclick', () => { this._startWarp(); playWarp(); });
 
-    // 右键：引力井
+    // 右键：引力井 + 音效
     this.canvas.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       this.interaction.createGravityWell(e.clientX - rect.left, e.clientY - rect.top);
+      playGravityWell();
     });
 
-    // 空格：流星雨（8颗流星 + 1颗彗星）
+    // 空格：流星雨（8颗流星 + 1颗彗星）+ 音效
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
         for (let i = 0; i < 8; i++)
-          setTimeout(() => this.particles.meteors.push(new Meteor(this.width, this.height)), i * 90);
+          setTimeout(() => { this.particles.meteors.push(new Meteor(this.width, this.height)); playMeteor(); }, i * 90);
         setTimeout(() => this.particles.meteors.push(new Comet(this.width, this.height)), 200);
       }
     });
@@ -214,13 +217,37 @@ export class Renderer {
           this.ctx.shadowBlur = 8 + star.size * 2;
         }
 
-        // 超新星光晕
+        // 超新星光晕 + 十字光芒
         if (star._novaLife > 0) {
           const nl = star._novaLife;
           this.ctx.shadowColor = `rgba(255,${Math.floor(180 + 75 * nl)},${Math.floor(100 + 155 * nl)},0.95)`;
           this.ctx.shadowBlur  = 20 + nl * 60;
           this.ctx.globalAlpha = Math.min(1, alpha + nl * 0.6);
           this.ctx.fillStyle   = `rgb(255,${Math.floor(240 * nl + 255 * (1 - nl))},${Math.floor(200 * nl + 255 * (1 - nl))})`;
+
+          // 4方向尖刺光芒
+          if (nl > 0.05) {
+            this.ctx.save();
+            this.ctx.globalCompositeOperation = 'screen';
+            const spikeLen = nl * 90 + 15;
+            const sx = star.x + (star.offsetX ?? 0);
+            const sy = star.y + (star.offsetY ?? 0);
+            [[1,0],[-1,0],[0,1],[0,-1],[0.7,0.7],[-0.7,0.7],[0.7,-0.7],[-0.7,-0.7]].forEach(([dx, dy], idx) => {
+              const isMain = idx < 4;
+              const len = isMain ? spikeLen : spikeLen * 0.45;
+              const grad = this.ctx.createLinearGradient(sx, sy, sx + dx * len, sy + dy * len);
+              grad.addColorStop(0, `rgba(255,255,200,${(nl * 0.85).toFixed(3)})`);
+              grad.addColorStop(1, 'rgba(255,230,100,0)');
+              this.ctx.beginPath();
+              this.ctx.moveTo(sx, sy);
+              this.ctx.lineTo(sx + dx * len, sy + dy * len);
+              this.ctx.strokeStyle = grad;
+              this.ctx.lineWidth   = isMain ? (1.5 + nl * 1.5) : 0.8;
+              this.ctx.shadowBlur  = 10 * nl;
+              this.ctx.stroke();
+            });
+            this.ctx.restore();
+          }
         }
 
         this.ctx.beginPath();
@@ -487,7 +514,11 @@ export class Renderer {
     const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) : 16;
     this.lastTime = time;
 
+    const prevNovas = this.particles.stars.filter(s => s._novaLife > 0).length;
     this.particles.update(delta);
+    const newNovas  = this.particles.stars.filter(s => s._novaLife > 0.98).length;
+    if (newNovas > prevNovas) playNova();
+
     this.updateNebulas(delta);
     this._updateAuroras(deltaMs);
     this._updateWarp(deltaMs);
