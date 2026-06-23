@@ -1,22 +1,156 @@
 /**
- * interaction.js  —  Codex 编写，Claude 整合
- * 鼠标视差偏移 + 附近星星连线
+ * interaction.js  —  鼠标视差 + 星星连线 + 点击爆炸特效
  */
 
 const CONNECT_DIST = 80;
 const MAX_OFFSET   = 28;
 const LERP         = 0.06;
 
+// 爆炸粒子颜色表（按星云主色 + 白光）
+const BURST_COLORS = [
+  [200, 180, 255], // 紫
+  [120, 180, 255], // 蓝
+  [255, 160, 220], // 玫红
+  [255, 240, 180], // 金黄
+  [255, 255, 255], // 白
+];
+
 export class Interaction {
   constructor() {
     this.mx = window.innerWidth  / 2;
     this.my = window.innerHeight / 2;
-    this._nx = 0; // 归一化 -1~1
+    this._nx = 0;
     this._ny = 0;
+    this.explosions = []; // 活跃爆炸列表
+
     window.addEventListener('mousemove', e => {
       this.mx = e.clientX;
       this.my = e.clientY;
     }, { passive: true });
+  }
+
+  /** 在 (x, y) 触发一次爆炸 */
+  explode(x, y) {
+    const count = 55 + Math.floor(Math.random() * 25);
+    const particles = [];
+
+    for (let i = 0; i < count; i++) {
+      const angle  = Math.random() * Math.PI * 2;
+      const speed  = 1.5 + Math.random() * 4.5;
+      const life   = 600 + Math.random() * 700;
+      const color  = BURST_COLORS[Math.floor(Math.random() * BURST_COLORS.length)];
+      const size   = 1.2 + Math.random() * 2.8;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life, maxLife: life,
+        color, size,
+        trail: [],        // 拖尾历史坐标
+      });
+    }
+
+    // 冲击波圆环
+    this.explosions.push({
+      x, y,
+      particles,
+      shockwave: { r: 0, maxR: 180, life: 400, maxLife: 400 },
+      flashLife: 120, flashMaxLife: 120, // 白光闪烁
+    });
+  }
+
+  /** 每帧更新所有爆炸 */
+  updateExplosions(dt) {
+    for (const exp of this.explosions) {
+      // 更新粒子
+      for (const p of exp.particles) {
+        p.trail.push({ x: p.x, y: p.y });
+        if (p.trail.length > 6) p.trail.shift();
+
+        p.x  += p.vx * dt * 0.06;
+        p.y  += p.vy * dt * 0.06;
+        p.vy += 0.012 * dt;       // 微重力下坠
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+        p.life -= dt;
+      }
+      exp.particles = exp.particles.filter(p => p.life > 0);
+
+      // 更新冲击波
+      const sw = exp.shockwave;
+      const swProgress = 1 - sw.life / sw.maxLife;
+      sw.r  = sw.maxR * swProgress;
+      sw.life -= dt;
+
+      // 白光
+      if (exp.flashLife > 0) exp.flashLife -= dt;
+    }
+    this.explosions = this.explosions.filter(e => e.particles.length > 0 || e.shockwave.life > 0);
+  }
+
+  /** 绘制所有爆炸 */
+  drawExplosions(ctx) {
+    for (const exp of this.explosions) {
+      // 白光闪烁（爆炸瞬间）
+      if (exp.flashLife > 0) {
+        const fa = (exp.flashLife / exp.flashMaxLife) * 0.35;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const fg = ctx.createRadialGradient(exp.x, exp.y, 0, exp.x, exp.y, 120);
+        fg.addColorStop(0, `rgba(255,255,255,${fa.toFixed(3)})`);
+        fg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, 120, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 冲击波圆环
+      const sw = exp.shockwave;
+      if (sw.life > 0) {
+        const sa = (sw.life / sw.maxLife) * 0.6;
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.beginPath();
+        ctx.arc(exp.x, exp.y, sw.r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(180,210,255,${sa.toFixed(3)})`;
+        ctx.lineWidth = 2.5 * (sw.life / sw.maxLife);
+        ctx.shadowColor = 'rgba(140,190,255,0.8)';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 爆炸粒子 + 拖尾
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      for (const p of exp.particles) {
+        const t = p.life / p.maxLife;
+        const [r, g, b] = p.color;
+
+        // 拖尾
+        if (p.trail.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(p.trail[0].x, p.trail[0].y);
+          for (let i = 1; i < p.trail.length; i++) ctx.lineTo(p.trail[i].x, p.trail[i].y);
+          ctx.lineTo(p.x, p.y);
+          ctx.strokeStyle = `rgba(${r},${g},${b},${(t * 0.4).toFixed(3)})`;
+          ctx.lineWidth = p.size * t * 0.6;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+        }
+
+        // 粒子本体
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * t, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},${b},${(t * 0.9).toFixed(3)})`;
+        ctx.shadowColor = `rgba(${r},${g},${b},0.8)`;
+        ctx.shadowBlur = 8 * t;
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   /** 每帧更新：平滑跟随鼠标，写入 star.offsetX/Y */

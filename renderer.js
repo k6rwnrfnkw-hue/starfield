@@ -1,4 +1,5 @@
 import { ParticleSystem } from './particle-system.js';
+import { Interaction }    from './interaction.js';
 
 const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
 
@@ -37,8 +38,18 @@ export class Renderer {
     this.canvas.style.height = '100vh';
 
     this.resize();
-    this.particles = new ParticleSystem(this.width, this.height);
-    this.nebulas = this.createNebulas();
+    this.particles  = new ParticleSystem(this.width, this.height);
+    this.nebulas    = this.createNebulas();
+    this.interaction = new Interaction();
+
+    // 初始化星星 ID（连线去重用）
+    this.particles.stars.forEach((s, i) => s._id = i);
+
+    // 点击触发爆炸
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.interaction.explode(e.clientX - rect.left, e.clientY - rect.top);
+    });
 
     window.addEventListener('resize', () => this.resize(), { passive: true });
   }
@@ -58,18 +69,53 @@ export class Renderer {
   }
 
   createNebulas() {
-    return [
-      { x: 0.22, y: 0.28, rx: 0.38, ry: 0.22, color: NEBULA_COLORS[0], opacity: 0.38 },
-      { x: 0.75, y: 0.22, rx: 0.32, ry: 0.20, color: NEBULA_COLORS[1], opacity: 0.35 },
-      { x: 0.55, y: 0.70, rx: 0.40, ry: 0.22, color: NEBULA_COLORS[2], opacity: 0.40 },
-      { x: 0.15, y: 0.75, rx: 0.28, ry: 0.18, color: NEBULA_COLORS[3], opacity: 0.32 },
-    ].map((nebula) => ({
-      ...nebula,
-      x: nebula.x * this.width,
-      y: nebula.y * this.height,
-      rx: nebula.rx * this.width,
-      ry: nebula.ry * this.height,
+    const defs = [
+      { nx: 0.22, ny: 0.28, rx: 0.38, ry: 0.22, color: NEBULA_COLORS[0], baseOpacity: 0.38 },
+      { nx: 0.75, ny: 0.22, rx: 0.32, ry: 0.20, color: NEBULA_COLORS[1], baseOpacity: 0.35 },
+      { nx: 0.55, ny: 0.70, rx: 0.40, ry: 0.22, color: NEBULA_COLORS[2], baseOpacity: 0.40 },
+      { nx: 0.15, ny: 0.75, rx: 0.28, ry: 0.18, color: NEBULA_COLORS[3], baseOpacity: 0.32 },
+    ];
+    return defs.map((d, i) => ({
+      // 当前位置（像素）
+      x:  d.nx * this.width,
+      y:  d.ny * this.height,
+      // 原始位置（用于归位漂移边界）
+      ox: d.nx * this.width,
+      oy: d.ny * this.height,
+      rx: d.rx * this.width,
+      ry: d.ry * this.height,
+      color: d.color,
+      baseOpacity: d.baseOpacity,
+      opacity: d.baseOpacity,
+      // 漂移速度（px/ms），每个星云方向不同
+      vx: (Math.random() - 0.5) * 0.015,
+      vy: (Math.random() - 0.5) * 0.010,
+      // 呼吸相位（秒），错开让各星云不同步
+      phase: (Math.PI * 2 / defs.length) * i + Math.random(),
+      // 呼吸速度（rad/ms）
+      breathSpeed: 0.0004 + Math.random() * 0.0003,
+      // 当前缩放（呼吸时微膨胀）
+      scale: 1,
     }));
+  }
+
+  updateNebulas(dt) {
+    for (const n of this.nebulas) {
+      // 缓慢漂移
+      n.x += n.vx * dt;
+      n.y += n.vy * dt;
+      // 边界弹回：离原点太远时反向
+      const dx = n.x - n.ox, dy = n.y - n.oy;
+      const limit = Math.min(this.width, this.height) * 0.12;
+      if (Math.abs(dx) > limit) n.vx *= -1;
+      if (Math.abs(dy) > limit) n.vy *= -1;
+
+      // 呼吸：opacity + scale 一起振荡
+      n.phase += n.breathSpeed * dt;
+      const breath = Math.sin(n.phase);
+      n.opacity = n.baseOpacity * (0.75 + 0.25 * breath);
+      n.scale   = 1 + 0.08 * breath;
+    }
   }
 
   drawBackground() {
@@ -80,17 +126,17 @@ export class Renderer {
   drawNebulas() {
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'screen';
-    for (const nebula of this.nebulas) {
+    for (const n of this.nebulas) {
       this.ctx.save();
-      this.ctx.translate(nebula.x, nebula.y);
-      this.ctx.scale(nebula.rx, nebula.ry);
+      this.ctx.translate(n.x, n.y);
+      this.ctx.scale(n.rx * n.scale, n.ry * n.scale);
 
-      const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-      gradient.addColorStop(0,    rgba(nebula.color, nebula.opacity));
-      gradient.addColorStop(0.45, rgba(nebula.color, nebula.opacity * 0.5));
-      gradient.addColorStop(1,    rgba(nebula.color, 0));
+      const g = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      g.addColorStop(0,    rgba(n.color, n.opacity));
+      g.addColorStop(0.45, rgba(n.color, n.opacity * 0.5));
+      g.addColorStop(1,    rgba(n.color, 0));
 
-      this.ctx.fillStyle = gradient;
+      this.ctx.fillStyle = g;
       this.ctx.beginPath();
       this.ctx.arc(0, 0, 1, 0, Math.PI * 2);
       this.ctx.fill();
@@ -160,16 +206,35 @@ export class Renderer {
   }
 
   render(time = 0) {
-    const delta = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) : 1;
+    const delta  = this.lastTime ? Math.min(2.5, (time - this.lastTime) / 16.67) : 1;
+    const deltaMs = this.lastTime ? Math.min(time - this.lastTime, 50) : 16;
     this.lastTime = time;
 
     this.particles.update(delta);
+    this.updateNebulas(delta);
+    this.interaction.update(this.particles.stars);
+
     this.drawBackground();
     this.drawNebulas();
-    this.drawStars();
+    this._drawStarsWithParallax();
     this.drawMeteors();
+    this.interaction.updateExplosions(deltaMs);
+    this.interaction.drawConnections(this.ctx, this.particles.stars);
+    this.interaction.drawExplosions(this.ctx);
 
     this.animationId = window.requestAnimationFrame((nextTime) => this.render(nextTime));
+  }
+
+  _drawStarsWithParallax() {
+    const stars = this.particles.stars;
+    // 临时应用视差偏移
+    for (const s of stars) {
+      s._ox = s.x; s._oy = s.y;
+      s.x += s.offsetX ?? 0;
+      s.y += s.offsetY ?? 0;
+    }
+    this.drawStars();
+    for (const s of stars) { s.x = s._ox; s.y = s._oy; }
   }
 
   start() {
