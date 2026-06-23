@@ -71,6 +71,9 @@ export class Renderer {
     // 太阳风（周期性水平冲击波）
     this._solarWind = { active: false, x: -50, nextIn: 18000 + Math.random() * 12000 };
 
+    // 超新星冲击波环
+    this._novaRings = [];
+
     // FPS 自适应
     this._fpsHistory = [];
     this._qualityLevel = 1; // 1=full, 0.7=medium, 0.4=low
@@ -626,6 +629,29 @@ export class Renderer {
     this.ctx.restore();
   }
 
+  // ─── 超新星冲击波环 ────────────────────────────────────────────────────────
+  _drawNovaRings() {
+    if (!this._novaRings?.length) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (const ring of this._novaRings) {
+      const alpha = ring.life * 0.55;
+      const grad = ctx.createRadialGradient(ring.x, ring.y, ring.r * 0.85, ring.x, ring.y, ring.r);
+      grad.addColorStop(0, `rgba(255,220,100,0)`);
+      grad.addColorStop(0.5, `rgba(255,240,180,${alpha.toFixed(3)})`);
+      grad.addColorStop(1, `rgba(200,180,255,0)`);
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 6 + ring.life * 10;
+      ctx.shadowColor = `rgba(255,210,100,${alpha})`;
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // ─── 太阳风 ──────────────────────────────────────────────────────────────
   _updateSolarWind(dt) {
     if (!this._solarWind.active) {
@@ -842,9 +868,13 @@ export class Renderer {
     const justExploded = this.particles.stars.filter(s => s._novaLife > 0.98 && !(s._chainTriggered));
     if (justExploded.length > 0) {
       playNova();
-      // 链式：在120px内随机引爆1颗相邻 layer2 星（30%概率）
       for (const nova of justExploded) {
         nova._chainTriggered = true;
+        // 超新星冲击波环（20%概率）
+        if (Math.random() < 0.20) {
+          this._novaRings.push({ x: nova.x, y: nova.y, r: 0, maxR: 250 + Math.random() * 150, life: 1 });
+        }
+        // 链式（30%概率）
         if (Math.random() > 0.3) continue;
         const nearby = this.particles.starsByLayer[2].filter(s => {
           if (s._novaLife > 0 || s._chainTriggered) return false;
@@ -857,6 +887,13 @@ export class Renderer {
         }
       }
     }
+
+    // 更新冲击波环
+    for (const ring of this._novaRings) {
+      ring.r += deltaMs * 0.08;
+      ring.life = Math.max(0, 1 - ring.r / ring.maxR);
+    }
+    this._novaRings = this._novaRings.filter(r => r.life > 0);
 
     // 星星偏移衰减（散射/太阳风后缓缓归位）
     for (const s of this.particles.stars) {
@@ -883,6 +920,7 @@ export class Renderer {
     this.drawNebulas();
     this._drawAuroras();
     this._drawStarsWithParallax();
+    this._drawNovaRings();
     this.drawMeteors();
     this._drawScan();
     this._drawSolarWind();
