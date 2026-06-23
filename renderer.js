@@ -1,7 +1,16 @@
 import { ParticleSystem, Meteor, Comet } from './particle-system.js';
 import { Interaction }            from './interaction.js';
 
-const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
+// 星云主题：[nebula colors × 4, aurora hue × 3]
+const THEMES = [
+  { nebulas: ['#5a1aaa','#0a2a7a','#8a1a5a','#1a3aaa'], auroras: [160,270,130] }, // 默认紫蓝
+  { nebulas: ['#aa3a00','#8a2a00','#aa6000','#7a1a30'], auroras: [20, 40, 350] }, // 日落橙红
+  { nebulas: ['#005a6a','#004a8a','#006a5a','#0a2a5a'], auroras: [180,200,160] }, // 深海青
+  { nebulas: ['#1a6a1a','#2a5a00','#006a3a','#1a5a4a'], auroras: [120,150,100] }, // 极光森林
+];
+let currentTheme = 0;
+
+const NEBULA_COLORS = THEMES[0].nebulas;
 
 // 极光带颜色
 const AURORA_BANDS = [
@@ -52,6 +61,17 @@ export class Renderer {
 
     // 超空间飞行状态
     this.warp = { active: false, progress: 0, streaks: [] };
+
+    // 扫描光束状态
+    this._scan = { active: false, x: 0, progress: 0, nextIn: 8000 + Math.random() * 8000 };
+
+    // 主题切换（T 键）
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyT') {
+        currentTheme = (currentTheme + 1) % THEMES.length;
+        this._applyTheme();
+      }
+    });
 
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
@@ -277,6 +297,56 @@ export class Renderer {
     }
   }
 
+  // ─── 主题 ────────────────────────────────────────────────────────────────
+  _applyTheme() {
+    const t = THEMES[currentTheme];
+    // 平滑过渡：把目标颜色存入星云，让下次 createNebulas 拾取
+    this.nebulas.forEach((n, i) => {
+      n.color = t.nebulas[i] ?? n.color;
+    });
+    this.auroras.forEach((a, i) => {
+      a.hue = t.auroras[i % t.auroras.length];
+    });
+  }
+
+  // ─── 扫描光束 ─────────────────────────────────────────────────────────────
+  _updateScan(dt) {
+    if (!this._scan.active) {
+      this._scan.nextIn -= dt;
+      if (this._scan.nextIn <= 0) {
+        this._scan.active   = true;
+        this._scan.progress = 0;
+        this._scan.nextIn   = 12000 + Math.random() * 10000;
+      }
+      return;
+    }
+    this._scan.progress += dt * 0.0005; // 过屏约2秒
+    if (this._scan.progress >= 1) this._scan.active = false;
+  }
+
+  _drawScan() {
+    if (!this._scan.active) return;
+    const W = this.width, H = this.height;
+    const p = this._scan.progress;
+    // 光束中心从左上→右下
+    const cx = W * p;
+    const cy = H * p * 0.5;
+    const beamW = 60 + 40 * Math.sin(p * Math.PI); // 中段最宽
+
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'screen';
+    // 斜向光带（旋转45°）
+    this.ctx.translate(cx, cy);
+    this.ctx.rotate(-Math.PI / 5);
+    const grad = this.ctx.createLinearGradient(-beamW, 0, beamW, 0);
+    grad.addColorStop(0, 'rgba(180,230,255,0)');
+    grad.addColorStop(0.5, `rgba(180,230,255,${(Math.sin(p * Math.PI) * 0.04).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(180,230,255,0)');
+    this.ctx.fillStyle = grad;
+    this.ctx.fillRect(-beamW, -H * 1.5, beamW * 2, H * 3);
+    this.ctx.restore();
+  }
+
   // ─── 极光 ────────────────────────────────────────────────────────────────
   _createAuroras() {
     return AURORA_BANDS.map((b, i) => {
@@ -419,6 +489,7 @@ export class Renderer {
     this.updateNebulas(delta);
     this._updateAuroras(deltaMs);
     this._updateWarp(deltaMs);
+    this._updateScan(deltaMs);
     this.interaction.update(this.particles.stars);
     this.interaction.updateGravityWell(this.particles.stars, deltaMs);
 
@@ -427,6 +498,7 @@ export class Renderer {
     this._drawAuroras();
     this._drawStarsWithParallax();
     this.drawMeteors();
+    this._drawScan();
     this._drawWarp();
     this.interaction.updateExplosions(deltaMs);
     this.interaction.updateCursorSparks(deltaMs);
