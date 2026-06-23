@@ -76,10 +76,12 @@ export class Renderer {
     // 初始化星星 ID（连线去重用）
     this.particles.stars.forEach((s, i) => s._id = i);
 
-    // 单击：爆炸
+    // 单击：爆炸 + 震动附近星星
     this.canvas.addEventListener('click', (e) => {
       const rect = this.canvas.getBoundingClientRect();
-      this.interaction.explode(e.clientX - rect.left, e.clientY - rect.top);
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      this.interaction.explode(x, y);
+      this.interaction.shakeStarsAt(x, y, this.particles.stars);
     });
 
     // 双击：超空间飞行

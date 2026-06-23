@@ -93,12 +93,29 @@ export class Interaction {
     this.gravityWell = { x, y, strength: 0.25, life: 3000, maxLife: 3000 };
   }
 
-  /** 更新引力井，把附近星星向中心拉 */
+  /** 更新引力井，把附近星星向中心拉；到期时反向崩塌 */
   updateGravityWell(stars, dt) {
     const gw = this.gravityWell;
     if (!gw) return;
     gw.life -= dt;
-    if (gw.life <= 0) { this.gravityWell = null; return; }
+
+    if (gw.life <= 0) {
+      // 崩塌：在井位置触发爆炸
+      this.explode(gw.x, gw.y);
+      // 附近星星弹射出去
+      for (const s of stars) {
+        const dx = (s.x + (s.offsetX ?? 0)) - gw.x;
+        const dy = (s.y + (s.offsetY ?? 0)) - gw.y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d < 300 && d > 2) {
+          const kick = (1 - d / 300) * 18;
+          s.offsetX = (s.offsetX ?? 0) + (dx / d) * kick;
+          s.offsetY = (s.offsetY ?? 0) + (dy / d) * kick;
+        }
+      }
+      this.gravityWell = null;
+      return;
+    }
 
     const maxR = 280, str = gw.strength;
     for (const s of stars) {
@@ -143,6 +160,21 @@ export class Interaction {
     ctx.arc(gw.x, gw.y, 28, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  }
+
+  /** 爆炸时抖动附近星星（外部调用） */
+  shakeStarsAt(x, y, stars) {
+    for (const s of stars) {
+      const sx = s.x + (s.offsetX ?? 0);
+      const sy = s.y + (s.offsetY ?? 0);
+      const dx = sx - x, dy = sy - y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 200 && d > 2) {
+        const f = (1 - d / 200) * 10;
+        s.offsetX = (s.offsetX ?? 0) + (dx / d) * f;
+        s.offsetY = (s.offsetY ?? 0) + (dy / d) * f;
+      }
+    }
   }
 
   /** 在 (x, y) 触发一次爆炸 */
