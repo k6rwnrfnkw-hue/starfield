@@ -81,7 +81,7 @@
               if (checks >= MAX_PAIR_CHECKS) {
                 break;
               }
-              if (other === star || other._connectionId <= star._connectionId) {
+              if (other === star || other._connectionId < star._connectionId) {
                 continue;
               }
 

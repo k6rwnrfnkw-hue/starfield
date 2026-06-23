@@ -13,11 +13,13 @@
       const layer = 1 + Math.floor(Math.random() * LAYERS);
       const depth = layer / LAYERS;
 
+      const x = Math.random() * window.innerWidth;
+      const y = Math.random() * window.innerHeight;
       stars.push({
-        x: Math.random() * window.innerWidth,
-        y: Math.random() * window.innerHeight,
-        renderX: 0,
-        renderY: 0,
+        x,
+        y,
+        renderX: x,
+        renderY: y,
         radius: randomBetween(0.6, 1.8) * (0.75 + depth * 0.45),
         alpha: randomBetween(0.35, 0.95),
         phase: randomBetween(0, Math.PI * 2),
