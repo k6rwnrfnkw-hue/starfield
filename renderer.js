@@ -98,6 +98,53 @@ export class Renderer {
       playGravityWell();
     });
 
+    // ── 触摸支持 ──────────────────────────────────────────────────────────
+    let _touchTimer = null;
+    let _lastTouchX = 0, _lastTouchY = 0;
+
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      _lastTouchX = t.clientX - rect.left;
+      _lastTouchY = t.clientY - rect.top;
+      // 长按500ms → 引力井
+      _touchTimer = setTimeout(() => {
+        this.interaction.createGravityWell(_lastTouchX, _lastTouchY);
+        playGravityWell();
+        _touchTimer = null;
+      }, 500);
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      if (_touchTimer) {
+        // 短触 → 爆炸
+        clearTimeout(_touchTimer);
+        _touchTimer = null;
+        const x = _lastTouchX, y = _lastTouchY;
+        this.interaction.explode(x, y);
+        this.interaction.shakeStarsAt(x, y, this.particles.stars);
+        this.pulseNebulaAt(x, y);
+        playExplosion(0.8);
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const nx = t.clientX - rect.left;
+      const ny = t.clientY - rect.top;
+      // 模拟 mousemove 供 Interaction 处理光粒子 + 视差
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: t.clientX, clientY: t.clientY, bubbles: true
+      }));
+      _lastTouchX = nx; _lastTouchY = ny;
+      if (_touchTimer) { clearTimeout(_touchTimer); _touchTimer = null; }
+    }, { passive: false });
+
     // 空格：流星雨（8颗流星 + 1颗彗星）+ 音效
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
@@ -158,6 +205,12 @@ export class Renderer {
   }
 
   updateNebulas(dt) {
+    // 视差目标（鼠标偏离中心）
+    const mx = this.interaction.mx ?? this.width  / 2;
+    const my = this.interaction.my ?? this.height / 2;
+    const nx = (mx / this.width  - 0.5) * 2;
+    const ny = (my / this.height - 0.5) * 2;
+
     for (const n of this.nebulas) {
       n.x += n.vx * dt;
       n.y += n.vy * dt;
@@ -165,6 +218,12 @@ export class Renderer {
       const limit = Math.min(this.width, this.height) * 0.12;
       if (Math.abs(dx) > limit) n.vx *= -1;
       if (Math.abs(dy) > limit) n.vy *= -1;
+
+      // 视差偏移（星云比星星慢且方向相反，营造深度感）
+      const pxTarget = -nx * 18;
+      const pyTarget = -ny * 12;
+      n._px = (n._px ?? 0) + (pxTarget - (n._px ?? 0)) * 0.012;
+      n._py = (n._py ?? 0) + (pyTarget - (n._py ?? 0)) * 0.012;
 
       n.phase += n.breathSpeed * dt;
       const breath = Math.sin(n.phase);
@@ -214,7 +273,7 @@ export class Renderer {
     this.ctx.globalCompositeOperation = 'screen';
     for (const n of this.nebulas) {
       this.ctx.save();
-      this.ctx.translate(n.x, n.y);
+      this.ctx.translate(n.x + (n._px ?? 0), n.y + (n._py ?? 0));
       this.ctx.scale(n.rx * n.scale, n.ry * n.scale);
 
       const g = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
