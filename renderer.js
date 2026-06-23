@@ -1,6 +1,6 @@
 import { ParticleSystem } from './particle-system.js';
 
-const NEBULA_COLORS = ['#3d1a6e', '#0a1a4a', '#6e1a3d', '#3d1a6e'];
+const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
 
 function hexToRgb(hex) {
   const value = Number.parseInt(hex.replace('#', ''), 16);
@@ -59,10 +59,10 @@ export class Renderer {
 
   createNebulas() {
     return [
-      { x: 0.22, y: 0.28, rx: 0.34, ry: 0.18, color: NEBULA_COLORS[0], opacity: 0.2 },
-      { x: 0.72, y: 0.24, rx: 0.28, ry: 0.16, color: NEBULA_COLORS[1], opacity: 0.18 },
-      { x: 0.58, y: 0.68, rx: 0.38, ry: 0.2, color: NEBULA_COLORS[2], opacity: 0.22 },
-      { x: 0.18, y: 0.78, rx: 0.25, ry: 0.14, color: NEBULA_COLORS[3], opacity: 0.15 },
+      { x: 0.22, y: 0.28, rx: 0.38, ry: 0.22, color: NEBULA_COLORS[0], opacity: 0.38 },
+      { x: 0.75, y: 0.22, rx: 0.32, ry: 0.20, color: NEBULA_COLORS[1], opacity: 0.35 },
+      { x: 0.55, y: 0.70, rx: 0.40, ry: 0.22, color: NEBULA_COLORS[2], opacity: 0.40 },
+      { x: 0.15, y: 0.75, rx: 0.28, ry: 0.18, color: NEBULA_COLORS[3], opacity: 0.32 },
     ].map((nebula) => ({
       ...nebula,
       x: nebula.x * this.width,
@@ -78,15 +78,17 @@ export class Renderer {
   }
 
   drawNebulas() {
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'screen';
     for (const nebula of this.nebulas) {
       this.ctx.save();
       this.ctx.translate(nebula.x, nebula.y);
       this.ctx.scale(nebula.rx, nebula.ry);
 
       const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-      gradient.addColorStop(0, rgba(nebula.color, nebula.opacity));
-      gradient.addColorStop(0.58, rgba(nebula.color, nebula.opacity * 0.45));
-      gradient.addColorStop(1, rgba(nebula.color, 0));
+      gradient.addColorStop(0,    rgba(nebula.color, nebula.opacity));
+      gradient.addColorStop(0.45, rgba(nebula.color, nebula.opacity * 0.5));
+      gradient.addColorStop(1,    rgba(nebula.color, 0));
 
       this.ctx.fillStyle = gradient;
       this.ctx.beginPath();
@@ -94,6 +96,7 @@ export class Renderer {
       this.ctx.fill();
       this.ctx.restore();
     }
+    this.ctx.restore();
   }
 
   drawStars() {
