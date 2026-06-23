@@ -1,5 +1,5 @@
-import { ParticleSystem } from './particle-system.js';
-import { Interaction }    from './interaction.js';
+import { ParticleSystem, Meteor } from './particle-system.js';
+import { Interaction }            from './interaction.js';
 
 const NEBULA_COLORS = ['#5a1aaa', '#0a2a7a', '#8a1a5a', '#1a3aaa'];
 
@@ -70,6 +70,15 @@ export class Renderer {
       e.preventDefault();
       const rect = this.canvas.getBoundingClientRect();
       this.interaction.createGravityWell(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    // 空格：流星雨（8颗依次喷发）
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        for (let i = 0; i < 8; i++)
+          setTimeout(() => this.particles.meteors.push(new Meteor(this.width, this.height)), i * 100);
+      }
     });
 
     window.addEventListener('resize', () => this.resize(), { passive: true });
@@ -388,9 +397,11 @@ export class Renderer {
     this.drawMeteors();
     this._drawWarp();
     this.interaction.updateExplosions(deltaMs);
+    this.interaction.updateCursorSparks(deltaMs);
     this.interaction.drawConnections(this.ctx, this.particles.stars);
     this.interaction.drawExplosions(this.ctx);
     this.interaction.drawGravityWell(this.ctx);
+    this.interaction.drawCursorSparks(this.ctx);
 
     this.animationId = window.requestAnimationFrame((nextTime) => this.render(nextTime));
   }

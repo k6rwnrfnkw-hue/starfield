@@ -22,12 +22,70 @@ export class Interaction {
     this._nx = 0;
     this._ny = 0;
     this.explosions  = [];
-    this.gravityWell = null; // { x, y, strength, life, maxLife }
+    this.gravityWell = null;
+    this.cursorSparks = []; // 鼠标拖尾粒子
+    this._prevMx = this.mx;
+    this._prevMy = this.my;
 
     window.addEventListener('mousemove', e => {
+      this._prevMx = this.mx;
+      this._prevMy = this.my;
       this.mx = e.clientX;
       this.my = e.clientY;
+      this._spawnCursorSparks();
     }, { passive: true });
+  }
+
+  _spawnCursorSparks() {
+    const dx = this.mx - this._prevMx;
+    const dy = this.my - this._prevMy;
+    const speed = Math.sqrt(dx * dx + dy * dy);
+    if (speed < 8) return; // 移动太慢不产生粒子
+
+    const count = Math.min(4, Math.floor(speed / 10));
+    for (let i = 0; i < count; i++) {
+      const angle = Math.atan2(dy, dx) + Math.PI + (Math.random() - 0.5) * 1.2;
+      const s = 0.5 + Math.random() * 1.8;
+      this.cursorSparks.push({
+        x: this.mx + (Math.random() - 0.5) * 4,
+        y: this.my + (Math.random() - 0.5) * 4,
+        vx: Math.cos(angle) * s,
+        vy: Math.sin(angle) * s,
+        life: 180 + Math.random() * 200,
+        maxLife: 380,
+        size: 0.8 + Math.random() * 1.2,
+        hue: 200 + Math.random() * 60,
+      });
+    }
+    if (this.cursorSparks.length > 120) this.cursorSparks.splice(0, 20);
+  }
+
+  updateCursorSparks(dt) {
+    for (const p of this.cursorSparks) {
+      p.x  += p.vx * dt * 0.05;
+      p.y  += p.vy * dt * 0.05;
+      p.vy += 0.005 * dt;
+      p.vx *= 0.98;
+      p.vy *= 0.98;
+      p.life -= dt;
+    }
+    this.cursorSparks = this.cursorSparks.filter(p => p.life > 0);
+  }
+
+  drawCursorSparks(ctx) {
+    if (this.cursorSparks.length === 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    for (const p of this.cursorSparks) {
+      const t = p.life / p.maxLife;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * t, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${p.hue},90%,80%,${(t * 0.7).toFixed(3)})`;
+      ctx.shadowColor = `hsla(${p.hue},90%,70%,0.6)`;
+      ctx.shadowBlur  = 6;
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** 在 (x, y) 创建引力井 */
